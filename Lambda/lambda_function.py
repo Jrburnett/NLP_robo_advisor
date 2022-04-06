@@ -1,6 +1,9 @@
+
 ### Required Libraries ###
 from datetime import datetime
+#from attr import validate
 from dateutil.relativedelta import relativedelta
+from botocore.vendored import requests
 
 ### Functionality Helper Functions ###
 def parse_int(n):
@@ -25,8 +28,50 @@ def build_validation_result(is_valid, violated_slot, message_content):
         "violatedSlot": violated_slot,
         "message": {"contentType": "PlainText", "content": message_content},
     }
-
-
+def get_investment_recommendation(risk_level):
+    '''
+    retrieve the initial invesment recommendation based on the risk profile
+    * **none:** '100% bonds (AGG), 0% equities (SPY)'
+    * **low:** "60% bonds (AGG), 40% equities (SPY)"
+    * **medium:** "40% bonds (AGG), 60% equities (SPY)"
+    * **high:** "20% bonds (AGG), 80% equities (SPY)"
+    '''    
+    risk_levels = {
+        "none":"100% bonds (AGG), 0% equities (SPY)",
+        "low":"60% bonds (AGG), 40% equities (SPY)",
+        "medium":"40% bonds (AGG), 60% equities (SPY)",
+        "high": "20% bonds (AGG), 80% equities (SPY)"        
+    }
+    return risk_levels[risk_level.lower()]
+    
+    
+def validate_data(age, investment_amount, intent_request):
+    
+    '''
+    age requirement is to be greater than 0 and less than 65
+    '''
+    if age is not None:
+        age = parse_int(
+            age
+        )
+        if age < 0:
+            return build_validation_result(
+                False, "age","You cant be less than 0 years old"
+                )
+        elif age >= 65:
+            return build_validation_result(
+                False, "age","Cannot be older than 64"
+            )
+    '''
+    The `investment_amount` should be equal to or greater than 5000.
+    '''
+    if investment_amount is not None:
+        investment_amount = parse_int(investment_amount)
+        if investment_amount < 5000:
+            return build_validation_result(False,"investmentAmount","min investment is $5000")
+    
+    return build_validation_result(True, None, None)
+    
 ### Dialog Actions Helper Functions ###
 def get_slots(intent_request):
     """
@@ -119,13 +164,30 @@ def recommend_portfolio(intent_request):
     """
 
     first_name = get_slots(intent_request)["firstName"]
-    age = get_slots(intent_request)["age"]
+    age = get_slots(intent_request)["age"] 
     investment_amount = get_slots(intent_request)["investmentAmount"]
     risk_level = get_slots(intent_request)["riskLevel"]
     source = intent_request["invocationSource"]
 
-    # YOUR CODE GOES HERE!
-
+    
+    if source=="DialogCodeHoook":
+        slots = get_slots(intent_request)
+        validation_result = validate_data(age, investment_amount, intent_request)
+        if not validation_result["isValid"]:
+            slots[validation_result["violatedSlot"]] = None 
+            
+            return elicit_slot(
+                intent_request["sessionAttributes"],
+                intent_request["currentIntent"]["name"],
+                slots, 
+                validation_result["violatedSlot"],
+                validation_result["message"],                
+            )
+        output_session_att = intent_request["sessionAttributes"]
+        
+        return delegate(output_session_att, get_slots(intent_request))
+    
+    initial_recommendation = get_investment_recommendation(risk_level)
 
 ### Intents Dispatcher ###
 def dispatch(intent_request):
